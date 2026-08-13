@@ -1,8 +1,10 @@
 """DOCX Processing Module"""
 from docx import Document
+from docx.shared import Inches
 from typing import Dict, List, Tuple
 from .detector import PIIDetector
 from .replacer import PIIReplacer
+import io
 
 class DocxProcessor:
     """Processes DOCX files for PII redaction"""
@@ -15,6 +17,7 @@ class DocxProcessor:
         """
         self.detector = PIIDetector(use_spacy=use_spacy)
         self.replacer = PIIReplacer()
+        self.image_redaction_count = 0
     
     def process_document(self, input_path: str, output_path: str) -> Dict:
         """Process a DOCX document and redact PII
@@ -43,6 +46,10 @@ class DocxProcessor:
                     redacted_text, _ = self.replacer.replace_in_text(para.text, detections)
                     self._replace_paragraph_text(para, redacted_text)
         
+        # ISSUE #3 FIX: Process and redact embedded images (PAN/Aadhaar cards, etc.)
+        print("Scanning for embedded images (PII documents)...")
+        self._redact_embedded_images(doc)
+        
         # Process tables
         print("Detecting PII in tables...")
         for table in doc.tables:
@@ -65,11 +72,77 @@ class DocxProcessor:
         # Get statistics
         stats = self.replacer.get_statistics(all_detections)
         
+        # Add image redaction count
+        if self.image_redaction_count > 0:
+            stats['IMAGES_REDACTED'] = self.image_redaction_count
+        
         return {
             'detections': all_detections,
             'statistics': stats,
             'replacement_map': self.replacer.replacement_map
         }
+    
+    def _redact_embedded_images(self, doc):
+        """Redact embedded images that may contain PII (ISSUE #3 FIX)
+        
+        Replaces inline shapes (embedded images) with a text placeholder
+        indicating that an image containing PII has been redacted.
+        
+        Args:
+            doc: python-docx Document object
+        """
+        redacted_count = 0
+        
+        # Iterate through all paragraphs to find inline shapes
+        for para in doc.paragraphs:
+            # Check if paragraph contains inline shapes (embedded images)
+            if hasattr(para, '_element') and hasattr(para._element, 'xpath'):
+                # Find all drawing elements in the paragraph
+                drawings = para._element.xpath('.//w:drawing')
+                
+                if drawings:
+                    # This paragraph contains embedded images
+                    # Replace images with placeholder text
+                    for drawing in drawings:
+                        try:
+                            # Remove the drawing element
+                            drawing.getparent().remove(drawing)
+                            redacted_count += 1
+                        except:
+                            pass
+                    
+                    # Add placeholder text if paragraph is now empty
+                    if not para.text.strip() or para.text == '':
+                        para.text = '[IMAGE_CONTAINING_PII_REDACTED]'
+                        # Make it visible
+                        if para.runs:
+                            para.runs[0].bold = True
+        
+        # Also check tables for embedded images
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        if hasattr(para, '_element') and hasattr(para._element, 'xpath'):
+                            drawings = para._element.xpath('.//w:drawing')
+                            
+                            if drawings:
+                                for drawing in drawings:
+                                    try:
+                                        drawing.getparent().remove(drawing)
+                                        redacted_count += 1
+                                    except:
+                                        pass
+                                
+                                if not para.text.strip() or para.text == '':
+                                    para.text = '[IMAGE_CONTAINING_PII_REDACTED]'
+                                    if para.runs:
+                                        para.runs[0].bold = True
+        
+        self.image_redaction_count = redacted_count
+        
+        if redacted_count > 0:
+            print(f"✓ Redacted {redacted_count} embedded image(s) (potential PII documents)")
     
     def _replace_paragraph_text(self, paragraph, new_text: str):
         """Replace paragraph text while preserving formatting
