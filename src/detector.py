@@ -1,0 +1,286 @@
+"""PII Detection Module"""
+import re
+from typing import List, Dict, Tuple, Set
+from .config import PATTERNS, COMPANY_INDICATORS, ADDRESS_INDICATORS, DOB_KEYWORDS
+
+class PIIDetector:
+    """Detects various types of PII in text"""
+    
+    def __init__(self, use_spacy=True):
+        """Initialize the PII detector
+        
+        Args:
+            use_spacy: Whether to use spaCy for NER (falls back to pattern-based if unavailable)
+        """
+        self.use_spacy = use_spacy
+        self.nlp = None
+        
+        if use_spacy:
+            try:
+                import spacy
+                try:
+                    self.nlp = spacy.load("en_core_web_sm")
+                except OSError:
+                    print("Warning: spaCy model not found. Falling back to pattern-based detection.")
+                    self.use_spacy = False
+            except ImportError:
+                print("Warning: spaCy not installed. Using pattern-based detection only.")
+                self.use_spacy = False
+    
+    def detect_all(self, text: str) -> Dict[str, List[Tuple[str, int, int]]]:
+        """Detect all PII types in text
+        
+        Args:
+            text: Input text to scan
+            
+        Returns:
+            Dictionary mapping PII type to list of (value, start, end) tuples
+        """
+        results = {}
+        
+        # Regex-based detection
+        results['EMAIL'] = self.detect_emails(text)
+        results['PHONE'] = self.detect_phones(text)
+        results['IP'] = self.detect_ips(text)
+        results['SSN'] = self.detect_ssns(text)
+        results['CREDIT_CARD'] = self.detect_credit_cards(text)
+        results['DOB'] = self.detect_dobs(text)
+        
+        # NER-based detection
+        if self.nlp:
+            results['PERSON'] = self.detect_persons_ner(text)
+            results['COMPANY'] = self.detect_companies_ner(text)
+            results['ADDRESS'] = self.detect_addresses_ner(text)
+        else:
+            results['PERSON'] = self.detect_persons_pattern(text)
+            results['COMPANY'] = self.detect_companies_pattern(text)
+            results['ADDRESS'] = self.detect_addresses_pattern(text)
+        
+        return results
+    
+    def detect_emails(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect email addresses"""
+        results = []
+        for match in re.finditer(PATTERNS['EMAIL'], text):
+            results.append((match.group(), match.start(), match.end()))
+        return results
+    
+    def detect_phones(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect phone numbers with validation"""
+        results = []
+        for match in re.finditer(PATTERNS['PHONE'], text):
+            phone = match.group()
+            # Basic validation: phone should have at least 10 digits
+            digits = re.sub(r'\D', '', phone)
+            if len(digits) >= 10 and len(digits) <= 15:
+                # Avoid false positives from pure financial numbers
+                if not self._is_financial_context(text, match.start()):
+                    results.append((phone, match.start(), match.end()))
+        return results
+    
+    def detect_ips(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect IPv4 addresses with validation"""
+        results = []
+        for match in re.finditer(PATTERNS['IP'], text):
+            ip = match.group()
+            # Validate octets
+            octets = ip.split('.')
+            if all(0 <= int(octet) <= 255 for octet in octets):
+                results.append((ip, match.start(), match.end()))
+        return results
+    
+    def detect_ssns(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect Social Security Numbers"""
+        results = []
+        for match in re.finditer(PATTERNS['SSN'], text):
+            results.append((match.group(), match.start(), match.end()))
+        return results
+    
+    def detect_credit_cards(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect credit card numbers with Luhn validation"""
+        results = []
+        for match in re.finditer(PATTERNS['CREDIT_CARD'], text):
+            cc = match.group()
+            digits = re.sub(r'\D', '', cc)
+            if len(digits) >= 13 and len(digits) <= 19:
+                # Apply Luhn algorithm
+                if self._luhn_check(digits):
+                    # Additional check: avoid financial report numbers
+                    if not self._is_financial_context(text, match.start()):
+                        results.append((cc, match.start(), match.end()))
+        return results
+    
+    def detect_dobs(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect dates of birth using context"""
+        results = []
+        # Look for DOB keywords followed by dates
+        for keyword in DOB_KEYWORDS:
+            pattern = keyword + r'[\s:]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})'
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                date_match = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', match.group())
+                if date_match:
+                    start = match.start() + date_match.start()
+                    end = match.start() + date_match.end()
+                    results.append((date_match.group(), start, end))
+        return results
+    
+    def detect_persons_ner(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect person names using spaCy NER"""
+        results = []
+        doc = self.nlp(text)
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                # Filter out single-word names that might be common nouns
+                if len(ent.text.split()) >= 2 or self._has_title_prefix(text, ent.start_char):
+                    results.append((ent.text, ent.start_char, ent.end_char))
+        return results
+    
+    def detect_persons_pattern(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect person names using pattern matching (fallback)"""
+        results = []
+        # Simple pattern: Title followed by capitalized words
+        pattern = r'\b(?:Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
+        for match in re.finditer(pattern, text):
+            results.append((match.group(1), match.start(1), match.end(1)))
+        
+        # Pattern: Multiple capitalized words (2-4 words)
+        pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b'
+        for match in re.finditer(pattern, text):
+            name = match.group(1)
+            # Filter out common false positives
+            if not self._is_common_term(name) and not self._is_all_caps(name):
+                results.append((name, match.start(), match.end()))
+        
+        return results
+    
+    def detect_companies_ner(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect company names using spaCy NER"""
+        results = []
+        doc = self.nlp(text)
+        for ent in doc.ents:
+            if ent.label_ == "ORG":
+                results.append((ent.text, ent.start_char, ent.end_char))
+        
+        # Also check for company indicator patterns
+        for indicator in COMPANY_INDICATORS:
+            pattern = r'\b([A-Z][A-Za-z\s&]+?' + re.escape(indicator) + r')\b'
+            for match in re.finditer(pattern, text):
+                company = match.group(1)
+                results.append((company, match.start(1), match.end(1)))
+        
+        return self._deduplicate_matches(results)
+    
+    def detect_companies_pattern(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect company names using pattern matching (fallback)"""
+        results = []
+        for indicator in COMPANY_INDICATORS:
+            pattern = r'\b([A-Z][A-Za-z\s&]+?' + re.escape(indicator) + r')\b'
+            for match in re.finditer(pattern, text):
+                company = match.group(1)
+                results.append((company, match.start(1), match.end(1)))
+        return self._deduplicate_matches(results)
+    
+    def detect_addresses_ner(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect addresses using spaCy NER and patterns"""
+        results = []
+        
+        # Use NER for locations
+        doc = self.nlp(text)
+        for ent in doc.ents:
+            if ent.label_ in ["GPE", "LOC", "FAC"]:
+                # Check if it's part of a larger address
+                context_start = max(0, ent.start_char - 100)
+                context_end = min(len(text), ent.end_char + 100)
+                context = text[context_start:context_end]
+                
+                if any(ind in context for ind in ADDRESS_INDICATORS):
+                    results.append((ent.text, ent.start_char, ent.end_char))
+        
+        # Pattern-based address detection
+        results.extend(self.detect_addresses_pattern(text))
+        
+        return self._deduplicate_matches(results)
+    
+    def detect_addresses_pattern(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect addresses using pattern matching"""
+        results = []
+        
+        # Multi-line address pattern
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if any(ind in line for ind in ADDRESS_INDICATORS):
+                # Collect multiple lines for full address
+                address_lines = [line.strip()]
+                for j in range(i + 1, min(i + 4, len(lines))):
+                    next_line = lines[j].strip()
+                    if next_line and (any(ind in next_line for ind in ADDRESS_INDICATORS) or 
+                                     re.search(r'\d{6}', next_line)):  # PIN code
+                        address_lines.append(next_line)
+                    else:
+                        break
+                
+                if len(address_lines) >= 2:
+                    full_address = ' '.join(address_lines)
+                    # Find position in original text
+                    pos = text.find(address_lines[0])
+                    if pos != -1:
+                        results.append((full_address, pos, pos + len(full_address)))
+        
+        return results
+    
+    def _luhn_check(self, card_number: str) -> bool:
+        """Validate credit card using Luhn algorithm"""
+        def digits_of(n):
+            return [int(d) for d in str(n)]
+        
+        digits = digits_of(card_number)
+        odd_digits = digits[-1::-2]
+        even_digits = digits[-2::-2]
+        checksum = sum(odd_digits)
+        for d in even_digits:
+            checksum += sum(digits_of(d * 2))
+        return checksum % 10 == 0
+    
+    def _is_financial_context(self, text: str, position: int) -> bool:
+        """Check if position is in a financial context"""
+        context_start = max(0, position - 50)
+        context_end = min(len(text), position + 50)
+        context = text[context_start:context_end].lower()
+        
+        financial_keywords = ['equity', 'shares', 'amount', 'rupees', 'rs.', 'inr', 
+                             'price', 'value', 'capital', 'million', 'crore']
+        return any(keyword in context for keyword in financial_keywords)
+    
+    def _has_title_prefix(self, text: str, position: int) -> bool:
+        """Check if name has a title prefix"""
+        context_start = max(0, position - 10)
+        context = text[context_start:position]
+        return any(title in context for title in ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.'])
+    
+    def _is_common_term(self, text: str) -> bool:
+        """Check if text is a common term that shouldn't be redacted"""
+        common_terms = ['The Company', 'Our Company', 'The Board', 'The Registrar', 
+                       'Red Herring', 'Book Built', 'Equity Shares']
+        return text in common_terms
+    
+    def _is_all_caps(self, text: str) -> bool:
+        """Check if text is all capitals (likely an acronym)"""
+        return text.isupper() and len(text) <= 10
+    
+    def _deduplicate_matches(self, matches: List[Tuple[str, int, int]]) -> List[Tuple[str, int, int]]:
+        """Remove duplicate and overlapping matches"""
+        if not matches:
+            return []
+        
+        # Sort by start position
+        sorted_matches = sorted(matches, key=lambda x: x[1])
+        
+        result = []
+        last_end = -1
+        
+        for match in sorted_matches:
+            if match[1] >= last_end:  # No overlap
+                result.append(match)
+                last_end = match[2]
+        
+        return result
