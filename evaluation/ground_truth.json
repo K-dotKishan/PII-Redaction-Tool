@@ -1,0 +1,41 @@
+{
+  "description": "Ground truth PII annotations from Red Herring Prospectus",
+  "annotations": [
+    {
+      "text": "cs.connect@kshinternational.com",
+      "type": "EMAIL",
+      "context": "Company contact email"
+    },
+    {
+      "text": "KSH International Limited",
+      "type": "COMPANY",
+      "context": "Main company name"
+    },
+    {
+      "text": "KSH INTERNATIONAL LIMITED",
+      "type": "COMPANY",
+      "context": "Company name in caps"
+    },
+    {
+      "text": "+91 20 4505 3237",
+      "type": "PHONE",
+      "context": "Company phone number"
+    },
+    {
+      "text": "Registrar of Companies",
+      "type": "COMPANY",
+      "context": "Regulatory body"
+    }
+  ],
+  "notes": [
+    "The Red Herring Prospectus is a financial document containing:",
+    "- Company names (KSH International Limited, various subsidiaries)",
+    "- Contact information (emails, phone numbers)",
+    "- Addresses (registered office, corporate office)",
+    "- Many financial dates (not DOBs)",
+    "- Financial figures (not credit cards)",
+    "- CIN numbers (not SSNs)",
+    "Some PII categories like SSN, Credit Card, DOB, and IP may not be present",
+    "in this specific financial prospectus document."
+  ]
+}
