@@ -13,7 +13,8 @@ class PIIReplacer:
         Args:
             seed: Random seed for Faker to ensure deterministic replacements
         """
-        self.faker = Faker()
+        # ISSUE #1 FIX: Use Indian locale for generating synthetic Indian names
+        self.faker = Faker('en_IN')
         Faker.seed(seed)
         self.replacement_map = {}
         self.used_replacements = set()
@@ -84,7 +85,8 @@ class PIIReplacer:
         # Use a deterministic approach based on hash
         hash_val = int(hashlib.md5(original.encode()).hexdigest()[:8], 16)
         Faker.seed(hash_val)
-        temp_faker = Faker()
+        # Use Indian locale for email generation too
+        temp_faker = Faker('en_IN')
         
         first = temp_faker.first_name().lower()
         last = temp_faker.last_name().lower()
