@@ -1,0 +1,30 @@
+# PII REDACTION EVALUATION REPORT
+======================================================================
+
+## Per-PII-Type Results
+
+PII Type        TP     FP     FN     Precision    Recall       F1          
+----------------------------------------------------------------------
+PERSON          N/A - No ground truth available for this PII type
+EMAIL           1      24     0      4.00%        100.00%      7.69%       
+PHONE           0      18     1      0.00%        0.00%        0.00%       
+COMPANY         1      147    2      0.68%        33.33%       1.32%       
+ADDRESS         N/A - No ground truth available for this PII type
+SSN             N/A - No ground truth available for this PII type
+CREDIT_CARD     N/A - No ground truth available for this PII type
+DOB             N/A - No ground truth available for this PII type
+IP              N/A - No ground truth available for this PII type
+----------------------------------------------------------------------
+
+## Overall Metrics
+
+Total True Positives:  2
+Total False Positives: 644
+Total False Negatives: 3
+
+Overall Precision: 0.31%
+Overall Recall:    40.00%
+Overall F1 Score:  0.61%
+Overall Accuracy:  0.31%
+
+======================================================================
