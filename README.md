@@ -125,15 +125,22 @@ The tool maintains a **replacement map** to ensure consistency:
 
 | PII Type | Original | Replacement |
 |----------|----------|-------------|
-| PERSON | Kushal Subbayya Hegde | John Anderson |
-| EMAIL | ksh@icicisecurities.com | john.anderson@example.com |
-| PHONE | +91 22 6807 7100 | +91 98765 43210 |
-| COMPANY | KSH International Limited | Example Industries Limited |
-| ADDRESS | 11/3 Village Birdewadi, Pune | 123 Example Road, City |
+| PERSON | Mr. Sarthak Malvadkar | Mr. John Anderson |
+| EMAIL | cs.connect@kshinternational.com | kathy.thornton@roberts.com |
+| PHONE | +91 20 4505 3237 | +91 98765 43210 |
+| COMPANY | Non-protected Company Ltd | Example Industries Limited |
+| ADDRESS | 123 Sample Street, Pune | 456 Example Road, City |
 | IP | 192.168.1.20 | 203.0.113.10 |
 | SSN | 123-45-6789 | 987-65-4321 |
 | CREDIT_CARD | 4111 1111 1111 1111 | 4000 0000 0000 0002 |
-| DOB | 01/01/1990 | 15/06/1988 |
+| DOB | DOB: 01/01/1990 | DOB: 15/06/1988 |
+
+**Protected Entities (NOT anonymized):**
+- Main company: KSH International Limited and all subsidiaries
+- Business partners: ICICI Bank, HDFC Bank, Nuvama, CARE Ratings, etc.
+- Generic references: "Our Company", "The Company", "The Board"
+- Legal/regulatory entities: SEBI, Companies Act, BSE, NSE
+- All business/legal/financial terminology
 
 ### Format Preservation
 
