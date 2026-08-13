@@ -84,7 +84,7 @@ def test_detect_persons_pattern(detector):
 
 def test_detect_companies_pattern(detector):
     """Test company name detection"""
-    text = "KSH International Limited and ABC Industries Pvt. Ltd."
+    text = "XYZ Corporation Limited and ABC Industries Pvt. Ltd."
     results = detector.detect_companies_pattern(text)
     
     assert len(results) >= 1

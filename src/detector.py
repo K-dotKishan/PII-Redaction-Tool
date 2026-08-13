@@ -215,6 +215,7 @@ class PIIDetector:
         - A generic reference like "Our Company"
         """
         company_lower = company_name.lower().strip()
+        company_normalized = re.sub(r'\s+', ' ', company_lower)  # Normalize spaces
         
         # Check generic references
         if company_lower in GENERIC_COMPANY_REFS:
@@ -229,20 +230,34 @@ class PIIDetector:
             if company_name == protected or company_lower == protected.lower():
                 return True
         
-        # Check if contains protected company name
+        # Check if contains protected company name (substring matching)
         for protected in PROTECTED_COMPANIES:
             protected_lower = protected.lower()
-            if protected_lower in company_lower or company_lower in protected_lower:
+            protected_normalized = re.sub(r'\s+', ' ', protected_lower)
+            if protected_normalized in company_normalized or company_normalized in protected_normalized:
                 return True
         
-        # Check protected business entities
+        # Check protected business entities (exact match first)
         for protected in PROTECTED_BUSINESS_ENTITIES:
             if company_name == protected or company_lower == protected.lower():
                 return True
-            # Partial match for variants
-            if len(protected) > 10:  # Only for substantial names
-                if protected.lower() in company_lower or company_lower in protected.lower():
-                    return True
+        
+        # Then check partial matches for variants
+        # Important: Check if company contains protected name OR protected contains company
+        # This handles "HDFC Bank" protecting "HDFC Bank Limited" and vice versa
+        for protected in PROTECTED_BUSINESS_ENTITIES:
+            protected_lower = protected.lower()
+            protected_normalized = re.sub(r'\s+', ' ', protected_lower)
+            
+            # Skip very short names to avoid false positives
+            if len(protected_normalized) < 5:
+                continue
+                
+            # Check both directions:
+            # 1. "HDFC Bank" in "HDFC Bank Limited" → protect
+            # 2. "HDFC Bank Limited" contains "HDFC Bank" → protect
+            if protected_normalized in company_normalized or company_normalized in protected_normalized:
+                return True
         
         return False
     
