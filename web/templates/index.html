@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PII Redaction Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔒 PII Redaction Tool</h1>
+            <p class="subtitle">Automatically redact personally identifiable information from DOCX documents</p>
+        </header>
+
+        <main>
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-box">
+                    <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <h2>Upload Document</h2>
+                    <p>Select a DOCX file to redact PII</p>
+                    <input type="file" id="fileInput" accept=".docx" style="display: none;">
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        Choose File
+                    </button>
+                    <p class="file-name" id="fileName"></p>
+                    <button class="btn btn-success" id="uploadBtn" style="display: none;" onclick="uploadFile()">
+                        Redact PII
+                    </button>
+                </div>
+            </div>
+
+            <div class="processing-section" id="processingSection" style="display: none;">
+                <div class="spinner"></div>
+                <h2>Processing Document...</h2>
+                <p>Detecting and redacting PII. Please wait.</p>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <h2>✓ Redaction Complete</h2>
+                <div class="stats-grid" id="statsGrid"></div>
+                <button class="btn btn-success btn-large" onclick="downloadFile()">
+                    Download Redacted Document
+                </button>
+                <button class="btn btn-secondary" onclick="reset()">
+                    Redact Another Document
+                </button>
+            </div>
+
+            <div class="error-section" id="errorSection" style="display: none;">
+                <h2>✗ Error</h2>
+                <p id="errorMessage"></p>
+                <button class="btn btn-secondary" onclick="reset()">
+                    Try Again
+                </button>
+            </div>
+        </main>
+
+        <footer>
+            <div class="info-section">
+                <h3>Supported PII Types</h3>
+                <div class="pii-types">
+                    <span class="badge">Names</span>
+                    <span class="badge">Emails</span>
+                    <span class="badge">Phone Numbers</span>
+                    <span class="badge">Companies</span>
+                    <span class="badge">Addresses</span>
+                    <span class="badge">SSN</span>
+                    <span class="badge">Credit Cards</span>
+                    <span class="badge">Date of Birth</span>
+                    <span class="badge">IP Addresses</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        let currentFileId = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = `Selected: ${file.name}`;
+                document.getElementById('uploadBtn').style.display = 'inline-block';
+            }
+        });
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showError('Please select a file');
+                return;
+            }
+
+            // Validate file type
+            if (!file.name.toLowerCase().endsWith('.docx')) {
+                showError('Please select a DOCX file');
+                return;
+            }
+
+            // Show processing
+            document.getElementById('uploadSection').style.display = 'none';
+            document.getElementById('processingSection').style.display = 'block';
+
+            // Upload file
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    currentFileId = data.file_id;
+                    showResults(data.statistics);
+                } else {
+                    showError(data.error || 'Error processing document');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        }
+
+        function showResults(stats) {
+            document.getElementById('processingSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'block';
+
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = '';
+
+            const piiTypes = [
+                'PERSON', 'EMAIL', 'PHONE', 'COMPANY', 'ADDRESS',
+                'SSN', 'CREDIT_CARD', 'DOB', 'IP'
+            ];
+
+            let total = 0;
+            piiTypes.forEach(type => {
+                const count = stats[type] || 0;
+                total += count;
+
+                const statCard = document.createElement('div');
+                statCard.className = 'stat-card';
+                statCard.innerHTML = `
+                    <div class="stat-value">${count}</div>
+                    <div class="stat-label">${formatPiiType(type)}</div>
+                `;
+                statsGrid.appendChild(statCard);
+            });
+
+            // Add total
+            const totalCard = document.createElement('div');
+            totalCard.className = 'stat-card stat-card-total';
+            totalCard.innerHTML = `
+                <div class="stat-value">${total}</div>
+                <div class="stat-label">Total PII Items</div>
+            `;
+            statsGrid.appendChild(totalCard);
+        }
+
+        function formatPiiType(type) {
+            const names = {
+                'PERSON': 'Names',
+                'EMAIL': 'Emails',
+                'PHONE': 'Phone Numbers',
+                'COMPANY': 'Companies',
+                'ADDRESS': 'Addresses',
+                'SSN': 'SSN',
+                'CREDIT_CARD': 'Credit Cards',
+                'DOB': 'Date of Birth',
+                'IP': 'IP Addresses'
+            };
+            return names[type] || type;
+        }
+
+        function downloadFile() {
+            if (currentFileId) {
+                window.location.href = `/download/${currentFileId}`;
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('uploadSection').style.display = 'none';
+            document.getElementById('processingSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('errorSection').style.display = 'block';
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function reset() {
+            document.getElementById('uploadSection').style.display = 'block';
+            document.getElementById('processingSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('errorSection').style.display = 'none';
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileName').textContent = '';
+            document.getElementById('uploadBtn').style.display = 'none';
+            currentFileId = null;
+        }
+    </script>
+</body>
+</html>
