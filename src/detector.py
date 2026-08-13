@@ -2,7 +2,8 @@
 import re
 from typing import List, Dict, Tuple, Set
 from .config import (PATTERNS, COMPANY_INDICATORS, ADDRESS_INDICATORS, DOB_KEYWORDS,
-                     PROTECTED_COMPANIES, PROTECTED_BUSINESS_ENTITIES, GENERIC_COMPANY_REFS)
+                     PROTECTED_COMPANIES, PROTECTED_BUSINESS_ENTITIES, GENERIC_COMPANY_REFS,
+                     EXPLICIT_PII_NAMES)
 
 class PIIDetector:
     """Detects various types of PII in text"""
@@ -16,6 +17,9 @@ class PIIDetector:
         self.use_spacy = use_spacy
         self.nlp = None
         
+        # Precompile explicit name patterns for performance (ISSUE #1 FIX)
+        self._compile_explicit_name_patterns()
+        
         if use_spacy:
             try:
                 import spacy
@@ -28,6 +32,16 @@ class PIIDetector:
                 print("Warning: spaCy not installed. Using pattern-based detection only.")
                 self.use_spacy = False
     
+    def _compile_explicit_name_patterns(self):
+        """Compile regex patterns for explicit PII names (ISSUE #1 FIX)"""
+        # Create case-insensitive patterns with word boundaries for each explicit name
+        self.explicit_name_patterns = []
+        for name in EXPLICIT_PII_NAMES:
+            # Normalize whitespace and create flexible pattern
+            normalized = re.sub(r'\s+', r'\\s+', name.strip())
+            pattern = re.compile(r'\b' + normalized + r'\b', re.IGNORECASE)
+            self.explicit_name_patterns.append((pattern, name))
+    
     def detect_all(self, text: str) -> Dict[str, List[Tuple[str, int, int]]]:
         """Detect all PII types in text
         
@@ -39,6 +53,9 @@ class PIIDetector:
         """
         results = {}
         
+        # ISSUE #1 FIX: Explicit name detection FIRST (highest priority)
+        results['PERSON'] = self.detect_explicit_names(text)
+        
         # Regex-based detection
         results['EMAIL'] = self.detect_emails(text)
         results['PHONE'] = self.detect_phones(text)
@@ -47,17 +64,72 @@ class PIIDetector:
         results['CREDIT_CARD'] = self.detect_credit_cards(text)
         results['DOB'] = self.detect_dobs(text)
         
-        # NER-based detection
+        # NER-based detection (supplement explicit names, don't replace)
         if self.nlp:
-            results['PERSON'] = self.detect_persons_ner(text)
+            additional_persons = self.detect_persons_ner(text)
+            # Merge with explicit names, avoiding duplicates
+            results['PERSON'] = self._merge_person_detections(results['PERSON'], additional_persons)
             results['COMPANY'] = self.detect_companies_ner(text)
             results['ADDRESS'] = self.detect_addresses_ner(text)
         else:
-            results['PERSON'] = self.detect_persons_pattern(text)
+            # Pattern-based fallback
+            additional_persons = self.detect_persons_pattern(text)
+            results['PERSON'] = self._merge_person_detections(results['PERSON'], additional_persons)
             results['COMPANY'] = self.detect_companies_pattern(text)
             results['ADDRESS'] = self.detect_addresses_pattern(text)
         
         return results
+    
+    def detect_explicit_names(self, text: str) -> List[Tuple[str, int, int]]:
+        """Detect explicit PII names from the predefined list (ISSUE #1 FIX)
+        
+        This ensures high recall for known promoters and key personnel.
+        
+        Args:
+            text: Input text to scan
+            
+        Returns:
+            List of (matched_name, start_pos, end_pos) tuples
+        """
+        results = []
+        seen_spans = set()
+        
+        for pattern, original_name in self.explicit_name_patterns:
+            for match in pattern.finditer(text):
+                start = match.start()
+                end = match.end()
+                span = (start, end)
+                
+                # Avoid duplicate overlapping matches
+                if span not in seen_spans:
+                    results.append((match.group(), start, end))
+                    seen_spans.add(span)
+        
+        return results
+    
+    def _merge_person_detections(self, explicit: List, additional: List) -> List:
+        """Merge explicit name detections with additional detected names, avoiding duplicates"""
+        # Use span-based deduplication
+        all_detections = {}
+        
+        # Add explicit names first (higher priority)
+        for name, start, end in explicit:
+            all_detections[(start, end)] = (name, start, end)
+        
+        # Add additional names if they don't overlap
+        for name, start, end in additional:
+            span = (start, end)
+            # Check for overlap with existing spans
+            overlaps = False
+            for existing_start, existing_end in all_detections.keys():
+                if not (end <= existing_start or start >= existing_end):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                all_detections[span] = (name, start, end)
+        
+        return list(all_detections.values())
     
     def detect_emails(self, text: str) -> List[Tuple[str, int, int]]:
         """Detect email addresses"""
@@ -188,21 +260,39 @@ class PIIDetector:
     def detect_companies_pattern(self, text: str) -> List[Tuple[str, int, int]]:
         """Detect company names using pattern matching (fallback)
         
-        IMPORTANT: Only detect actual company names, not generic references
-        Also preserves the main company and legitimate business entities
+        ISSUE #2 FIX: Only detect FULL formal company names with indicators.
+        Do NOT match generic words like "Company", "Group", "Offer", etc.
+        
+        Args:
+            text: Input text to scan
+            
+        Returns:
+            List of (company_name, start_pos, end_pos) tuples
         """
         results = []
         
+        # STRICT MATCHING: Only match multi-word company names with legal suffixes
+        # Pattern requires: [Capital Word(s)] + [Legal Indicator]
+        # Minimum 2 words before the indicator to avoid matching "The Company Limited"
+        
         for indicator in COMPANY_INDICATORS:
-            pattern = r'\b([A-Z][A-Za-z\s&]+?' + re.escape(indicator) + r')\b'
+            # Require at least 2-3 capitalized words before the indicator
+            # This prevents matching "Our Company", "The Group", etc.
+            pattern = r'\b([A-Z][A-Za-z]+(?:\s+[A-Z&][A-Za-z]+){1,5})\s+' + re.escape(indicator) + r'\b'
+            
             for match in re.finditer(pattern, text):
-                company = match.group(1).strip()
+                company = match.group(0).strip()
                 
-                # Check if this company should be protected
+                # ISSUE #2 FIX: Check if this company should be protected
                 if self._is_protected_company(company):
                     continue
                 
-                results.append((company, match.start(1), match.end(1)))
+                # Additional filter: Must be at least 3 words total
+                word_count = len(company.split())
+                if word_count < 3:
+                    continue
+                
+                results.append((company, match.start(), match.end()))
         
         return self._deduplicate_matches(results)
     
