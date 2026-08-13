@@ -1,30 +1,96 @@
-# PII REDACTION EVALUATION REPORT
-======================================================================
+================================================================================
+PII REDACTION EVALUATION REPORT
+================================================================================
 
-## Per-PII-Type Results
+Ground Truth Annotations: 87
+Document: Red Herring Prospectus - KSH International Limited
 
-PII Type        TP     FP     FN     Precision    Recall       F1          
-----------------------------------------------------------------------
-PERSON          N/A - No ground truth available for this PII type
-EMAIL           1      24     0      4.00%        100.00%      7.69%       
-PHONE           0      18     1      0.00%        0.00%        0.00%       
-COMPANY         1      147    2      0.68%        33.33%       1.32%       
-ADDRESS         N/A - No ground truth available for this PII type
-SSN             N/A - No ground truth available for this PII type
-CREDIT_CARD     N/A - No ground truth available for this PII type
-DOB             N/A - No ground truth available for this PII type
-IP              N/A - No ground truth available for this PII type
-----------------------------------------------------------------------
+PER-PII-TYPE RESULTS
+================================================================================
+PII Type        GT     Det    TP     FP     FN     Precision    Recall       F1          
+--------------------------------------------------------------------------------
+PERSON          19     958    9      949    10     0.94%        47.37%       1.84%       
+EMAIL           19     26     19     7      0      73.08%       100.00%      84.44%      
+PHONE           8      21     8      13     0      38.10%       100.00%      55.17%      
+COMPANY         16     247    16     231    0      6.48%        100.00%      12.17%      
+ADDRESS         6      55     0      55     6      0.00%        0.00%        0.00%       
+SSN             N/A - Not applicable - US-specific identifier, Indian financial document
+CREDIT_CARD     N/A - Not present - Financial prospectus does not contain credit card numbers
+DOB             N/A - Not present - Document contains incorporation dates and financial year dates, not personal dates of birth
+IP              N/A - Not present - Printed financial document does not contain IP addresses
+--------------------------------------------------------------------------------
 
-## Overall Metrics
+OVERALL METRICS
+================================================================================
+Total True Positives:  52
+Total False Positives: 1255
+Total False Negatives: 16
 
-Total True Positives:  2
-Total False Positives: 644
-Total False Negatives: 3
+Overall Precision: 3.98%
+Overall Recall:    76.47%
+Overall F1 Score:  7.56%
+Overall Accuracy:  3.93%
 
-Overall Precision: 0.31%
-Overall Recall:    40.00%
-Overall F1 Score:  0.61%
-Overall Accuracy:  0.31%
+Note: Accuracy = TP / (TP + FP + FN)
 
-======================================================================
+================================================================================
+
+EXAMPLE DETECTIONS
+================================================================================
+
+PERSON - True Positives (examples):
+  [TP] sarthak malvadkar
+  [TP] sachin gawade
+  [TP] rohit kushal hegde
+
+PERSON - False Positives (examples):
+  [FP] securities contracts
+  [FP] extra budgetary resources
+  [FP] sale up
+
+PERSON - False Negatives (examples):
+  [FN] atul ranade
+  [FN] manisha shukla
+  [FN] sharmila joshi
+
+EMAIL - True Positives (examples):
+  [TP] kshinternational.ipo@in.mpms.mufg.com
+  [TP] customerservice.mb@nuvama.com
+  [TP] eric.bacha@hdfcbank.com
+
+EMAIL - False Positives (examples):
+  [FP] parag.pansare@kirtanepandit.com
+  [FP] pro@eximbankindia.in
+  [FP] ipocmg@icicibank.com
+
+PHONE - True Positives (examples):
+  [TP] +91 20 6769 4648
+  [TP] +91 20 7157 6403
+  [TP] +91 22 4079 1000
+
+PHONE - False Positives (examples):
+  [FP] 20 4505 3237
+  [FP] 01217000 602
+  [FP] 20 6729 5100
+
+COMPANY - True Positives (examples):
+  [TP] kushal motors and electricals private limited
+  [TP] kirtane & pandit llp
+  [TP] waterloo industrial park ix a private limited
+
+COMPANY - False Positives (examples):
+  [FP] book running lead managers book running lead managers book running lead managers book running lead managers book running lead managers book running lead managers book running lead managers book running lead managers book running lead managers name and logo of the book running lead manager name and logo of the book running lead manager name and logo of the book running lead manager contact person contact person contact person contact person email and telephone email and telephone nuvama wealth management limited
+  [FP] key managerial personnel key managerial personnel of our company
+  [FP] bhandary metal extrusion private limited
+
+ADDRESS - False Positives (examples):
+  [FP] ebitda margin ebitda margin is calculated as ebitda divided by revenue from operations
+  [FP] ₹[●] per equity share, being the final price within the price band, at which equity shares will be allotted to successful bidders, other than anchor investors as determined in accordance with the book building process and determined by our company, in consultation with the book running lead managers, in terms of this red herring prospectus on the pricing date. equity shares will be allotted to anchor investors at the anchor investor offer price in terms of this red herring prospectus. the offer price will be decided by our company, in consultation with the brlms on the pricing date, in accordance with the book building process and in terms of this red herring prospectus
+  [FP] 5th floor, gopal house opposite harshal hall, above hdfc limited karve road, pune – 411 038 maharashtra, india
+
+ADDRESS - False Negatives (examples):
+  [FN] next to kanjurmarg railway station, kanjurmarg (east) mumbai â€“ 400042
+  [FN] 11/3, 11/4 and 11/5, village birdewadi, taluka shirur, pune 412205
+  [FN] 163, 5th floor, h.t.parekh marg backbay reclamation churchgate, mumbai â€“ 400020
+
+================================================================================
