@@ -32,7 +32,9 @@ PROTECTED_COMPANIES = [
 # Partner/vendor companies to PRESERVE (legitimate business entities in prospectus)
 PROTECTED_BUSINESS_ENTITIES = [
     'ICICI Bank Limited',
+    'ICICI Securities Limited',
     'ICICI Securities',
+    'HDFC Bank Limited',
     'HDFC Bank',
     'HDFC Limited',
     'State Bank of India',
@@ -40,12 +42,14 @@ PROTECTED_BUSINESS_ENTITIES = [
     'CARE Ratings Limited',
     'Care Analytics and Advisory Private Limited',
     'Kirtane & Pandit LLP',
+    'MUFG Bank',
     'MUFG',
     'Vedanta Limited',
     'Nidec Industrial',
+    'Link Intime India Private Limited',
     'Link Intime',
-    'Formerly Link Intime India Private Limited',
     'BSE Limited',
+    'National Stock Exchange of India Limited',
     'National Stock Exchange',
     'SEBI',
     'Registrar of Companies',
@@ -56,7 +60,43 @@ GENERIC_COMPANY_REFS = [
     'our company', 'the company', 'said company', 'this company',
     'the issuer', 'our issuer', 'the promoter', 'our promoter',
     'the promoters', 'our promoters', 'the board', 'our board',
+    'our group', 'the group', 'the offer', 'the issue',
 ]
+
+# ============================================================================
+# ISSUE #1 FIX: EXPLICIT PROMOTER & KEY PERSONNEL NAMES
+# These names MUST be detected and redacted (high recall requirement)
+# ============================================================================
+
+# Promoter family members and key shareholders
+PROMOTER_NAMES = [
+    'Kushal Subbayya Hegde',
+    'Pushpa Kushal Hegde',
+    'Rajesh Kushal Hegde',
+    'Rohit Kushal Hegde',
+    'Rakhi Girija Shetty',
+    'Maithili Rajesh Hegde',
+    'Katyayani Balasubramanian',
+]
+
+# Key Managerial Personnel, Directors, and Executives
+KEY_PERSONNEL_NAMES = [
+    'Sarthak Malvadkar',
+    'Sandesh Bhagwat',
+    'Amod Joshi',
+    'Dinesh Hirachand Munot',
+    'Ajay Shriram Patil',
+    'Ram Kumar Tiwari',
+    'Indu Jacob',
+    'Lokesh Shah',
+    'Soumavo Sarkar',
+    'Kishan Rastogi',
+    'Abhijit Diwan',
+    'Shanti Gopalkrishnan',
+]
+
+# Combine all explicit names for matching
+EXPLICIT_PII_NAMES = PROMOTER_NAMES + KEY_PERSONNEL_NAMES
 
 # Regex patterns for PII detection
 PATTERNS = {
