@@ -83,11 +83,12 @@ class PIIReplacer:
         """Generate a fake email address"""
         # Use a deterministic approach based on hash
         hash_val = int(hashlib.md5(original.encode()).hexdigest()[:8], 16)
-        self.faker.seed(hash_val)
+        Faker.seed(hash_val)
+        temp_faker = Faker()
         
-        first = self.faker.first_name().lower()
-        last = self.faker.last_name().lower()
-        domain = self.faker.domain_name()
+        first = temp_faker.first_name().lower()
+        last = temp_faker.last_name().lower()
+        domain = temp_faker.domain_name()
         
         return f"{first}.{last}@{domain}"
     
