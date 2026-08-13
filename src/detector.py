@@ -1,7 +1,8 @@
 """PII Detection Module"""
 import re
 from typing import List, Dict, Tuple, Set
-from .config import PATTERNS, COMPANY_INDICATORS, ADDRESS_INDICATORS, DOB_KEYWORDS
+from .config import (PATTERNS, COMPANY_INDICATORS, ADDRESS_INDICATORS, DOB_KEYWORDS,
+                     PROTECTED_COMPANIES, PROTECTED_BUSINESS_ENTITIES, GENERIC_COMPANY_REFS)
 
 class PIIDetector:
     """Detects various types of PII in text"""
@@ -136,49 +137,114 @@ class PIIDetector:
         return results
     
     def detect_persons_pattern(self, text: str) -> List[Tuple[str, int, int]]:
-        """Detect person names using pattern matching (fallback)"""
-        results = []
-        # Simple pattern: Title followed by capitalized words
-        pattern = r'\b(?:Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
-        for match in re.finditer(pattern, text):
-            results.append((match.group(1), match.start(1), match.end(1)))
+        """Detect person names using pattern matching (fallback)
         
-        # Pattern: Multiple capitalized words (2-4 words)
-        pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b'
+        CONSERVATIVE: Only detect names with title prefixes or in specific contexts
+        to avoid false positives from legitimate business terminology
+        """
+        results = []
+        
+        # ONLY pattern: Title followed by capitalized words (high confidence)
+        pattern = r'\b(?:Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.|Director|Manager)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b'
         for match in re.finditer(pattern, text):
             name = match.group(1)
-            # Filter out common false positives
-            if not self._is_common_term(name) and not self._is_all_caps(name):
-                results.append((name, match.start(), match.end()))
+            if not self._is_common_term(name):
+                results.append((name, match.start(1), match.end(1)))
+        
+        # DO NOT use aggressive capitalized word patterns without context
+        # The previous pattern was causing false positives on:
+        # - "Companies Act" → detected as person name ❌
+        # - "Book Built" → detected as person name ❌  
+        # - "Dated December" → detected as person name ❌
         
         return results
     
     def detect_companies_ner(self, text: str) -> List[Tuple[str, int, int]]:
-        """Detect company names using spaCy NER"""
+        """Detect company names using spaCy NER
+        
+        IMPORTANT: Filter out protected companies and generic references
+        """
         results = []
         doc = self.nlp(text)
+        
         for ent in doc.ents:
             if ent.label_ == "ORG":
-                results.append((ent.text, ent.start_char, ent.end_char))
+                # Check if protected
+                if not self._is_protected_company(ent.text):
+                    results.append((ent.text, ent.start_char, ent.end_char))
         
         # Also check for company indicator patterns
         for indicator in COMPANY_INDICATORS:
             pattern = r'\b([A-Z][A-Za-z\s&]+?' + re.escape(indicator) + r')\b'
             for match in re.finditer(pattern, text):
-                company = match.group(1)
-                results.append((company, match.start(1), match.end(1)))
+                company = match.group(1).strip()
+                
+                # Check if protected
+                if not self._is_protected_company(company):
+                    results.append((company, match.start(1), match.end(1)))
         
         return self._deduplicate_matches(results)
     
     def detect_companies_pattern(self, text: str) -> List[Tuple[str, int, int]]:
-        """Detect company names using pattern matching (fallback)"""
+        """Detect company names using pattern matching (fallback)
+        
+        IMPORTANT: Only detect actual company names, not generic references
+        Also preserves the main company and legitimate business entities
+        """
         results = []
+        
         for indicator in COMPANY_INDICATORS:
             pattern = r'\b([A-Z][A-Za-z\s&]+?' + re.escape(indicator) + r')\b'
             for match in re.finditer(pattern, text):
-                company = match.group(1)
+                company = match.group(1).strip()
+                
+                # Check if this company should be protected
+                if self._is_protected_company(company):
+                    continue
+                
                 results.append((company, match.start(1), match.end(1)))
+        
         return self._deduplicate_matches(results)
+    
+    def _is_protected_company(self, company_name: str) -> bool:
+        """Check if a company name should be protected from redaction
+        
+        Returns True if the company is:
+        - The main company or its subsidiaries
+        - A legitimate business partner/vendor in the prospectus
+        - A generic reference like "Our Company"
+        """
+        company_lower = company_name.lower().strip()
+        
+        # Check generic references
+        if company_lower in GENERIC_COMPANY_REFS:
+            return True
+        
+        # Check if starts with generic prefix
+        if company_lower.startswith(('our ', 'the ', 'said ', 'this ')):
+            return True
+        
+        # Check protected companies (exact match)
+        for protected in PROTECTED_COMPANIES:
+            if company_name == protected or company_lower == protected.lower():
+                return True
+        
+        # Check if contains protected company name
+        for protected in PROTECTED_COMPANIES:
+            protected_lower = protected.lower()
+            if protected_lower in company_lower or company_lower in protected_lower:
+                return True
+        
+        # Check protected business entities
+        for protected in PROTECTED_BUSINESS_ENTITIES:
+            if company_name == protected or company_lower == protected.lower():
+                return True
+            # Partial match for variants
+            if len(protected) > 10:  # Only for substantial names
+                if protected.lower() in company_lower or company_lower in protected.lower():
+                    return True
+        
+        return False
     
     def detect_addresses_ner(self, text: str) -> List[Tuple[str, int, int]]:
         """Detect addresses using spaCy NER and patterns"""
@@ -258,10 +324,74 @@ class PIIDetector:
         return any(title in context for title in ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.'])
     
     def _is_common_term(self, text: str) -> bool:
-        """Check if text is a common term that shouldn't be redacted"""
-        common_terms = ['The Company', 'Our Company', 'The Board', 'The Registrar', 
-                       'Red Herring', 'Book Built', 'Equity Shares']
-        return text in common_terms
+        """Check if text is a common term that shouldn't be redacted
+        
+        IMPORTANT: This protects legitimate business/legal/financial terminology
+        from being incorrectly flagged as person names
+        """
+        # Normalize for comparison
+        text_lower = text.lower()
+        
+        # Common business/legal/regulatory terms (DO NOT REDACT)
+        protected_terms = [
+            # General business
+            'the company', 'our company', 'the board', 'the registrar',
+            'red herring', 'book built', 'equity shares', 'offer price',
+            'anchor investors', 'retail investors', 'qualified institutional',
+            'non institutional', 'market maker', 'eligible employees',
+            
+            # Legal/regulatory
+            'companies act', 'sebi regulations', 'listing agreement',
+            'securities contracts', 'issue committee', 'audit committee',
+            'nomination committee', 'stakeholders relationship',
+            
+            # Document references
+            'section', 'chapter', 'schedule', 'annexure', 'page',
+            'restated financial', 'prospectus', 'memorandum',
+            
+            # Financial terms
+            'face value', 'issue size', 'price band', 'lot size',
+            'market capitalization', 'net worth', 'earnings per',
+            'return on', 'profit after', 'revenue from',
+            
+            # Time references  
+            'fiscal year', 'financial year', 'dated', 'period ended',
+            'year ended', 'months ended', 'quarter ended',
+            
+            # Dates/months (should not be detected as names)
+            'january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december',
+            'dated december', 'dated january', 'dated february', 'dated march',
+            'dated april', 'dated may', 'dated june', 'dated july',
+            'dated august', 'dated september', 'dated october', 'dated november',
+            
+            # Common combinations
+            'book running', 'lead managers', 'book built offer',
+            'issue opens', 'issue closes', 'basis of allotment',
+            'credit of equity', 'commencement of trading',
+        ]
+        
+        # Check if matches any protected term
+        if text_lower in protected_terms:
+            return True
+        
+        # Check if it's part of a protected phrase
+        for term in protected_terms:
+            if term in text_lower or text_lower in term:
+                return True
+        
+        # Check if starts with months
+        months = ['january', 'february', 'march', 'april', 'may', 'june',
+                 'july', 'august', 'september', 'october', 'november', 'december']
+        if any(text_lower.startswith(month) or text_lower.endswith(month) for month in months):
+            return True
+        
+        # Check if starts with time references
+        time_refs = ['dated', 'period', 'year', 'quarter', 'fiscal', 'financial']
+        if any(text_lower.startswith(ref) for ref in time_refs):
+            return True
+        
+        return False
     
     def _is_all_caps(self, text: str) -> bool:
         """Check if text is all capitals (likely an acronym)"""

@@ -14,6 +14,50 @@ PII_CATEGORIES = [
     "IP"
 ]
 
+# DOCUMENT-SPECIFIC CONFIGURATION
+# For a Red Herring Prospectus, the main company and subsidiaries are NOT PII
+# They are the subject of the document and must be preserved
+
+# Main company and subsidiaries to PRESERVE (do not redact)
+PROTECTED_COMPANIES = [
+    'KSH International Limited',
+    'KSH INTERNATIONAL LIMITED',
+    'KSH Distriparks Private Limited',
+    'KSH Integrated Logistics Private Limited',
+    'Waterloo Industrial Park',  # Covers all variants
+    'Kushal Motors and Electricals Private Limited',
+    'Bhandary Metal Extrusion Private Limited',  # Historical name
+]
+
+# Partner/vendor companies to PRESERVE (legitimate business entities in prospectus)
+PROTECTED_BUSINESS_ENTITIES = [
+    'ICICI Bank Limited',
+    'ICICI Securities',
+    'HDFC Bank',
+    'HDFC Limited',
+    'State Bank of India',
+    'Nuvama Wealth Management Limited',
+    'CARE Ratings Limited',
+    'Care Analytics and Advisory Private Limited',
+    'Kirtane & Pandit LLP',
+    'MUFG',
+    'Vedanta Limited',
+    'Nidec Industrial',
+    'Link Intime',
+    'Formerly Link Intime India Private Limited',
+    'BSE Limited',
+    'National Stock Exchange',
+    'SEBI',
+    'Registrar of Companies',
+]
+
+# Generic references to ALWAYS preserve
+GENERIC_COMPANY_REFS = [
+    'our company', 'the company', 'said company', 'this company',
+    'the issuer', 'our issuer', 'the promoter', 'our promoter',
+    'the promoters', 'our promoters', 'the board', 'our board',
+]
+
 # Regex patterns for PII detection
 PATTERNS = {
     "EMAIL": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
